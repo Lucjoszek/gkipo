@@ -8,3 +8,5 @@
    - obrót o 90° w prawo.
 4. Wyświetlenie zmodyfikowanego obrazu.
 5. Wyświetlenie informacji o obrazach w konsoli: Macierz obrazu i rozmiar (W, H).
+
+![Podgląd](assets/readme/wyswietlone_zdjecia.png)
