@@ -23,7 +23,8 @@ Ocenia trzy parametry:
 2. **Kontrast**
 * Sprawdza rozrzut wartości pikseli.
 * < 0.12 - niski kontrast.
-* > 0.23 - wysoki kontrast. 
+* \> 0.23 - wysoki kontrast. 
 3. **Clipping**
 * Procent pikseli w skrajnych 2% częściach histogramu.
 * Jeśli udział przekracza 5% wszystkich pikseli, to dochodzi do clippingu.
+
