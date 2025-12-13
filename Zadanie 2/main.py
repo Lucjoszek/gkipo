@@ -14,7 +14,8 @@ def get_image_from_web(url: str) -> http.client.HTTPResponse | None:
     :return: Obraz jako HTTPResponse
     :rtype: http.client.HTTPResponse
     """
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'}) # `headers` jest potrzebny, aby uniknąć błędu 403.
+    req = urllib.request.Request(url, headers={
+        'User-Agent': 'Mozilla/5.0'})  # `headers` jest potrzebny, aby uniknąć błędu 403.
     try:
         return urllib.request.urlopen(req)
     except Exception as err:
@@ -22,47 +23,80 @@ def get_image_from_web(url: str) -> http.client.HTTPResponse | None:
         return None
 
 
-def image_quality_check(img_np: np.ndarray) -> str:
+def image_quality_check(img_np: np.ndarray) -> dict:
     """
     Ocena jakości obrazu na podstawie histogramu.
 
     :param img_np: Obraz w postaci tablicy NumPy
-    :return: Wynik oceny obrazu: "Niedoświetlone" | "Prześwietlone" | "Prawidłowe"
-    :rtype: str
+    :return: Słownik z wynikami
+    :rtype: dict
     """
 
     bits: int = np.iinfo(img_np.dtype).bits  # Odczyt liczby bitów
-    bins: int = 2 ** bits  # Liczba koszy histogramu
+    max_bits_range: int = 2 ** bits - 1  # Zakres bitów
 
-    hist, _ = np.histogram(img_np.ravel(), bins=bins, range=(0, bins - 1))
+    # Spłaszczenie tablicy do 1D i normalizacja do zakresu 0.0-1.0
+    pixels = img_np.ravel().astype(float)
+    pixels_norm = pixels / max_bits_range
+    total_pixels = pixels.size
 
-    # Normalizacja histogramu
-    # Każda wartość oznacza procent pikseli o danej jasności
-    hist_norm = hist / hist.sum()
+    # Progi
+    THRESHOLD_SHADOWS = 0.02  # Cienie
+    THRESHOLD_HIGHLIGHTS = 0.98  # Światła
+    THRESHOLD_DARK = 0.25  # Niedoświetlenie
+    THRESHOLD_BRIGHT = 0.75  # Prześwietlenie
 
-    # Obliczenie średniej jasności obrazu
-    # jasność * procent wystąpień tej jasności
-    brightness_levels = np.arange(bins)
-    mean_brightness = np.sum(hist_norm * brightness_levels)
+    # Obliczenia statystyczne
+    mean_val = np.mean(pixels_norm)  # Średnia jasność
+    std_dev = np.std(pixels_norm)  # Odchylenie standardowe (kontrast)
 
-    # Skrajne części obrazu
-    # `k` określa, ile najciemniejszych i najjaśniejszych jest analizowane
-    # Niech będzie to 1% zakresu
-    k = max(1, int(0.01 * bins))
+    # Analiza clippingu
+    shadows_clip_ratio = np.sum(pixels_norm <= THRESHOLD_SHADOWS) / total_pixels
+    highlights_clip_ratio = np.sum(pixels_norm >= THRESHOLD_HIGHLIGHTS) / total_pixels
 
-    # Procent pikseli bardzo ciemnych
-    left_part = np.sum(hist_norm[:k])
+    exposure: str
+    contrast: str
+    shadows_clip: str
+    highlights_clip: str
 
-    # Procent pikseli bardzo jasnych
-    right_part = np.sum(hist_norm[-k:])
+    # Ocena ekspozycji
+    if mean_val < THRESHOLD_DARK:
+        exposure = 'Zbyt ciemny'
+    elif mean_val > THRESHOLD_BRIGHT:
+        exposure = 'Zbyt jasny'
+    else:
+        exposure = 'Ekspozycja umiarkowana'
 
-    if mean_brightness < 0.3 * bins and left_part > 0.05:
-        return "Niedoświetlone"
+    # Ocena kontrastu
+    if std_dev < 0.12:
+        contrast = 'Niski kontrast'
+    elif std_dev > 0.23:
+        contrast = 'Wysoki kontrast'
+    else:
+        contrast = 'Kontrast umiarkowany'
 
-    if mean_brightness > 0.7 * bins and right_part > 0.05:
-        return "Prześwietlone"
+    # Ocena clipping cieni
+    if shadows_clip_ratio > 0.05:
+        shadows_clip = 'Clipping cieni'
+    else:
+        shadows_clip = 'Brak clippingu cieni'
 
-    return "Prawidłowe"
+    # Clipping świateł
+    if highlights_clip_ratio > 0.05:
+        highlights_clip = 'Clipping świateł'
+    else:
+        highlights_clip = 'Brak clippingu świateł'
+
+    return {
+        'mean_norm': mean_val,
+        'std_dev_norm': std_dev,
+        'shadows_clip_ratio': shadows_clip_ratio,
+        'highlights_clip_ratio': highlights_clip_ratio,
+        'exposure': exposure,
+        'contrast': contrast,
+        'shadows_clip': shadows_clip,
+        'highlights_clip': highlights_clip
+    }
 
 
 if __name__ == '__main__':
@@ -77,10 +111,20 @@ if __name__ == '__main__':
         img = Image.open(img_data)
         img_np = np.asarray(img)
 
-        bits: int = np.iinfo(img_np.dtype).bits # Odczyt liczby bitów
-        bins: int = 2 ** bits # Liczba koszy histogramu
+        quality_check = image_quality_check(img_np)  # Analiza jakości obrazu
 
-        r, g, b = img.split() # Wydobycie kanałów
+        # Wyświetlenie informacji analizy
+        print(f'Średnia jasność (0-1): {quality_check['mean_norm']:.3f}\n'
+              f'Kontrast (std dev): {quality_check['std_dev_norm']:.3f}\n'
+              f'Ekspozycja: {quality_check['exposure']}\n'
+              f'Kontrast: {quality_check['contrast']}\n'
+              f'Clipping cieni: {quality_check['shadows_clip']}: {quality_check['shadows_clip_ratio']:.1%}\n'
+              f'Clipping świateł: {quality_check['highlights_clip']}: {quality_check['highlights_clip_ratio']:.1%}')
+
+        bits: int = np.iinfo(img_np.dtype).bits  # Odczyt liczby bitów
+        bins: int = 2 ** bits  # Liczba koszy histogramu
+
+        r, g, b = img.split()  # Wydobycie kanałów
         r_np = np.asarray(r)
         g_np = np.asarray(g)
         b_np = np.asarray(b)
@@ -123,5 +167,3 @@ if __name__ == '__main__':
 
         plt.tight_layout()
         plt.show()
-
-        print(image_quality_check(img_np))
